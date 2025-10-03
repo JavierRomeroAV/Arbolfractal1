@@ -1,44 +1,66 @@
 // Variables globales
 let arboles = [];
 let bananos = [];
-let pajaros = [];
-let sol;
+let gotas = [];
 let nubes = [];
 let canvas;
+let truenos = [];
+let ultimoTrueno = 0;
 
 // Configuración inicial
 function setup() {
   canvas = createCanvas(windowWidth, windowHeight);
+  canvas.style('display', 'block');
   colorMode(HSB, 360, 100, 100, 100);
   
-  // Crear árboles
+  // Crear árboles fractales
   for (let i = 0; i < 5; i++) {
     let x = random(width * 0.1, width * 0.9);
-    arboles.push(new Arbol(x, height, random(80, 120)));
+    arboles.push(new ArbolFractal(x, height, random(height * 0.2, height * 0.3)));
   }
   
-  // Crear sol
-  sol = new Sol(width * 0.8, height * 0.2);
-  
-  // Crear nubes
-  for (let i = 0; i < 3; i++) {
-    nubes.push(new Nube(random(width), random(height * 0.1, height * 0.3)));
+  // Crear nubes de lluvia
+  for (let i = 0; i < 7; i++) {
+    nubes.push(new NubeLluvia(random(width), random(height * 0.05, height * 0.2)));
   }
   
-  // Crear pájaros
-  for (let i = 0; i < 8; i++) {
-    pajaros.push(new Pajaro(random(width), random(height * 0.2, height * 0.5)));
+  // Inicializar sistema de gotas de lluvia
+  for (let i = 0; i < 300; i++) {
+    gotas.push(new Gota(random(width), random(-500, 0)));
   }
 }
 
 // Función principal de dibujo
 function draw() {
-  // Fondo cielo
-  background(200, 70, 90); // Azul cielo
+  // Fondo cielo lluvioso con gradiente oscuro
+  let gradienteSky = drawingContext.createLinearGradient(0, 0, width, 0);
+  gradienteSky.addColorStop(0, color(210, 30, 40)); // Azul oscuro
+  gradienteSky.addColorStop(0.5, color(220, 25, 35)); // Azul grisáceo
+  gradienteSky.addColorStop(1, color(230, 20, 30)); // Gris azulado
   
-  // Dibujar sol
-  sol.actualizar();
-  sol.dibujar();
+  drawingContext.fillStyle = gradienteSky;
+  rect(0, 0, width, height);
+  
+  // Efecto de trueno aleatorio
+  if (random(100) < 0.5 && millis() - ultimoTrueno > 5000) {
+    truenos.push({
+      alpha: 80,
+      duracion: random(5, 15)
+    });
+    ultimoTrueno = millis();
+  }
+  
+  // Dibujar truenos
+  for (let i = truenos.length - 1; i >= 0; i--) {
+    let trueno = truenos[i];
+    // Flash de luz
+    fill(60, 10, 100, trueno.alpha);
+    rect(0, 0, width, height);
+    trueno.alpha -= trueno.duracion;
+    if (trueno.alpha <= 0) {
+      truenos.splice(i, 1);
+    }
+  }
   
   // Dibujar nubes
   for (let nube of nubes) {
@@ -46,19 +68,37 @@ function draw() {
     nube.dibujar();
   }
   
-  // Dibujar pájaros
-  for (let pajaro of pajaros) {
-    pajaro.actualizar();
-    pajaro.dibujar();
+  // Dibujar gotas de lluvia
+  for (let gota of gotas) {
+    gota.actualizar();
+    gota.dibujar();
   }
   
-  // Dibujar suelo
-  fill(120, 70, 60);
-  rect(0, height - 20, width, 20);
+  // Dibujar suelo mojado con gradiente
+  let gradienteSuelo = drawingContext.createLinearGradient(0, height - 40, width, height - 40);
+  gradienteSuelo.addColorStop(0, color(200, 30, 20));
+  gradienteSuelo.addColorStop(0.5, color(200, 20, 25));
+  gradienteSuelo.addColorStop(1, color(200, 40, 15));
+  
+  drawingContext.fillStyle = gradienteSuelo;
+  rect(0, height - 40, width, 40);
+  
+  // Reflejos en el suelo
+  drawingContext.globalAlpha = 0.2;
+  drawingContext.globalCompositeOperation = 'lighter';
+  for (let arbol of arboles) {
+    push();
+    scale(1, -0.2);
+    translate(0, -height * 2 + 40);
+    arbol.dibujar(true); // Dibujar reflejo
+    pop();
+  }
+  drawingContext.globalAlpha = 1;
+  drawingContext.globalCompositeOperation = 'source-over';
   
   // Dibujar árboles
   for (let arbol of arboles) {
-    arbol.dibujar();
+    arbol.dibujar(false);
   }
   
   // Actualizar y dibujar bananos
@@ -68,55 +108,193 @@ function draw() {
     banano.dibujar();
     
     // Eliminar bananos viejos o que han caído fuera de la pantalla
-    if (banano.vida <= 0 || banano.posicion.y > height - 20) {
+    if (banano.vida <= 0 || banano.posicion.y > height - 40) {
       bananos.splice(i, 1);
     }
   }
 }
 
-// Clase para el árbol
-class Arbol {
+// Clase para el árbol fractal
+class ArbolFractal {
   constructor(x, y, altura) {
     this.posicion = createVector(x, y);
-    this.altura = altura;
-    this.ancho = altura / 5;
-    this.color = color(30, 80, 40);
+    this.altura = altura * 1.5;
+    this.ancho = this.altura / 10;
+    this.color = color(30, 40, 30);
     this.puntosFruto = [];
+    this.angulo = PI/6;
+    this.reduccion = 0.67;
+    this.niveles = 5;
     
-    // Generar puntos para los frutos
-    let numPuntos = floor(random(3, 6));
-    for (let i = 0; i < numPuntos; i++) {
-      this.puntosFruto.push({
-        x: this.posicion.x + random(-this.ancho, this.ancho),
-        y: this.posicion.y - this.altura * random(0.5, 0.9)
-      });
+    // Generar puntos para los frutos en las puntas de las ramas
+    this.calcularPuntosFruto();
+  }
+  
+  calcularPuntosFruto() {
+    // Esta función se llamará después de dibujar el árbol para obtener los puntos finales
+    this.puntosFruto = [];
+    let puntas = [];
+    this.obtenerPuntasRamas(this.posicion.x, this.posicion.y, -PI/2, this.altura * 0.7, 0, puntas);
+    
+    // Seleccionar algunas puntas aleatorias para los frutos
+    for (let i = 0; i < min(8, puntas.length); i++) {
+      let indice = floor(random(puntas.length));
+      if (indice < puntas.length) {
+        this.puntosFruto.push(puntas[indice]);
+      }
+    }
+  }
+  
+  obtenerPuntasRamas(x, y, angulo, longitud, nivel, puntas) {
+    // Calcular el punto final de esta rama
+    let xFin = x + cos(angulo) * longitud;
+    let yFin = y + sin(angulo) * longitud;
+    
+    // Si es una rama final, añadir a las puntas
+    if (nivel === this.niveles - 1) {
+      puntas.push({x: xFin, y: yFin});
+    } else {
+      // Recursión para las ramas hijas
+      this.obtenerPuntasRamas(xFin, yFin, angulo - this.angulo, longitud * this.reduccion, nivel + 1, puntas);
+      this.obtenerPuntasRamas(xFin, yFin, angulo + this.angulo, longitud * this.reduccion, nivel + 1, puntas);
+    }
+  }
+  
+  dibujar(esReflejo = false) {
+    push();
+    
+    if (!esReflejo) {
+      // Sombra del árbol solo para el árbol real, no para el reflejo
+      drawingContext.shadowBlur = 15;
+      drawingContext.shadowColor = 'rgba(0, 0, 0, 0.3)';
+    }
+    
+    // Color del tronco más oscuro para día lluvioso
+    stroke(20, 30, 20);
+    strokeWeight(this.ancho);
+    
+    // Dibujar el árbol fractal recursivamente
+    this.dibujarRama(this.posicion.x, this.posicion.y, -PI/2, this.altura * 0.7, 0);
+    
+    // Puntos de frutos (invisibles)
+    noFill();
+    noStroke();
+    for (let punto of this.puntosFruto) {
+      ellipse(punto.x, punto.y, 5, 5);
+    }
+    
+    pop();
+  }
+  
+  dibujarRama(x, y, angulo, longitud, nivel) {
+    // Calcular el punto final de esta rama
+    let xFin = x + cos(angulo) * longitud;
+    let yFin = y + sin(angulo) * longitud;
+    
+    // Ajustar el grosor según el nivel
+    strokeWeight(this.ancho * pow(0.7, nivel));
+    
+    // Ajustar el color según el nivel
+    let tono = map(nivel, 0, this.niveles, 20, 40);
+    let saturacion = map(nivel, 0, this.niveles, 30, 50);
+    let brillo = map(nivel, 0, this.niveles, 20, 30);
+    stroke(tono, saturacion, brillo);
+    
+    // Dibujar esta rama
+    line(x, y, xFin, yFin);
+    
+    // Si no hemos llegado al nivel máximo, dibujar las ramas hijas
+    if (nivel < this.niveles - 1) {
+      this.dibujarRama(xFin, yFin, angulo - this.angulo, longitud * this.reduccion, nivel + 1);
+      this.dibujarRama(xFin, yFin, angulo + this.angulo, longitud * this.reduccion, nivel + 1);
+    }
+  }
+  
+  generarBanano() {
+    if (this.puntosFruto.length > 0) {
+      // Calcular puntos de fruto si no se ha hecho
+      if (this.puntosFruto.length === 0) {
+        this.calcularPuntosFruto();
+      }
+      
+      let puntoAleatorio = random(this.puntosFruto);
+      bananos.push(new Banano(puntoAleatorio.x, puntoAleatorio.y));
+    }
+  }
+}
+
+// Clase para las gotas de lluvia
+class Gota {
+  constructor(x, y) {
+    this.posicion = createVector(x, y);
+    this.velocidad = createVector(random(-0.5, 0.5), random(5, 15));
+    this.longitud = random(10, 30);
+    this.grosor = random(1, 2);
+    this.alpha = random(150, 220);
+  }
+  
+  actualizar() {
+    this.posicion.add(this.velocidad);
+    
+    // Si la gota sale de la pantalla, reiniciarla arriba
+    if (this.posicion.y > height) {
+      this.posicion.y = random(-100, 0);
+      this.posicion.x = random(width);
+      this.velocidad.y = random(5, 15);
+      this.longitud = random(10, 30);
     }
   }
   
   dibujar() {
     push();
-    // Tronco
-    fill(30, 60, 40);
-    noStroke();
-    rect(this.posicion.x - this.ancho/2, this.posicion.y - this.altura, this.ancho, this.altura);
-    
-    // Copa del árbol
-    fill(120, 80, 40);
-    ellipse(this.posicion.x, this.posicion.y - this.altura, this.altura, this.altura * 0.8);
-    
-    // Puntos de frutos (para referencia visual)
-    fill(60, 100, 100, 30);
-    for (let punto of this.puntosFruto) {
-      ellipse(punto.x, punto.y, 10, 10);
-    }
+    stroke(220, 10, 90, this.alpha);
+    strokeWeight(this.grosor);
+    line(
+      this.posicion.x, 
+      this.posicion.y, 
+      this.posicion.x + this.velocidad.x * 0.5, 
+      this.posicion.y - this.longitud
+    );
     pop();
   }
+}
+
+// Clase para las nubes de lluvia
+class NubeLluvia {
+  constructor(x, y) {
+    this.posicion = createVector(x, y);
+    this.velocidad = createVector(random(0.3, 1.2), 0);
+    this.tamaño = random(100, 250);
+    this.color = color(220, 10, 30, 90);
+    this.gotasTimer = 0;
+  }
   
-  generarBanano() {
-    if (this.puntosFruto.length > 0) {
-      let puntoAleatorio = random(this.puntosFruto);
-      bananos.push(new Banano(puntoAleatorio.x, puntoAleatorio.y));
+  actualizar() {
+    this.posicion.add(this.velocidad);
+    
+    // Si la nube sale de la pantalla, vuelve a aparecer por el otro lado
+    if (this.posicion.x > width + this.tamaño) {
+      this.posicion.x = -this.tamaño;
+      this.posicion.y = random(height * 0.05, height * 0.2);
     }
+  }
+  
+  dibujar() {
+    push();
+    translate(this.posicion.x, this.posicion.y);
+    
+    // Dibujar nube más oscura para día lluvioso
+    fill(this.color);
+    noStroke();
+    
+    // Forma de nube más compleja
+    ellipse(0, 0, this.tamaño, this.tamaño * 0.6);
+    ellipse(this.tamaño * 0.3, -this.tamaño * 0.1, this.tamaño * 0.7, this.tamaño * 0.5);
+    ellipse(-this.tamaño * 0.3, this.tamaño * 0.1, this.tamaño * 0.7, this.tamaño * 0.5);
+    ellipse(this.tamaño * 0.5, this.tamaño * 0.05, this.tamaño * 0.6, this.tamaño * 0.4);
+    ellipse(-this.tamaño * 0.5, -this.tamaño * 0.05, this.tamaño * 0.6, this.tamaño * 0.4);
+    
+    pop();
   }
 }
 
@@ -178,42 +356,46 @@ class Sol {
     this.posicion = createVector(x, y);
     this.tamaño = min(width, height) * 0.15;
     this.angulo = 0;
-    this.color = color(40, 100, 100);
+    this.color = color(35, 80, 95); // Color más suave
+    this.resplandor = 0;
   }
   
   actualizar() {
-    this.angulo += 0.01;
+    this.angulo += 0.005;
+    this.resplandor = sin(frameCount * 0.02) * 10; // Efecto de pulsación suave
   }
   
   dibujar() {
     push();
     translate(this.posicion.x, this.posicion.y);
     
-    // Rayos de sol
-    fill(40, 100, 100, 30);
-    for (let i = 0; i < 12; i++) {
-      push();
-      rotate(this.angulo + i * TWO_PI / 12);
-      let rayoLongitud = this.tamaño * 0.8;
-      triangle(0, 0, rayoLongitud * 0.3, rayoLongitud, -rayoLongitud * 0.3, rayoLongitud);
-      pop();
-    }
+    // Resplandor exterior
+    drawingContext.shadowBlur = 50 + this.resplandor;
+    drawingContext.shadowColor = color(35, 90, 100, 70);
+    
+    // Gradiente de sol
+    let gradiente = drawingContext.createRadialGradient(0, 0, 0, 0, 0, this.tamaño/2);
+    gradiente.addColorStop(0, color(40, 80, 100, 100));
+    gradiente.addColorStop(0.7, color(35, 90, 95, 100));
+    gradiente.addColorStop(1, color(30, 100, 90, 90));
+    
+    drawingContext.fillStyle = gradiente;
     
     // Sol
-    fill(this.color);
     noStroke();
-    ellipse(0, 0, this.tamaño, this.tamaño);
+    ellipse(0, 0, this.tamaño + this.resplandor, this.tamaño + this.resplandor);
     
-    // Cara del sol
-    fill(40, 60, 100);
-    ellipse(-this.tamaño * 0.2, -this.tamaño * 0.1, this.tamaño * 0.15, this.tamaño * 0.15); // Ojo izquierdo
-    ellipse(this.tamaño * 0.2, -this.tamaño * 0.1, this.tamaño * 0.15, this.tamaño * 0.15); // Ojo derecho
-    
-    // Sonrisa
-    noFill();
-    stroke(40, 60, 100);
-    strokeWeight(this.tamaño * 0.05);
-    arc(0, this.tamaño * 0.1, this.tamaño * 0.5, this.tamaño * 0.3, 0, PI);
+    // Rayos de sol sutiles
+    drawingContext.shadowBlur = 0;
+    fill(40, 80, 100, 20);
+    for (let i = 0; i < 8; i++) {
+      push();
+      rotate(this.angulo + i * TWO_PI / 8);
+      let rayoLongitud = this.tamaño * 1.2;
+      let rayoAncho = map(sin(frameCount * 0.05 + i), -1, 1, 0.1, 0.2);
+      ellipse(rayoLongitud/2, 0, rayoLongitud, rayoLongitud * rayoAncho);
+      pop();
+    }
     
     pop();
   }
@@ -315,6 +497,13 @@ function mousePressed() {
       arbol.generarBanano();
     }
   }
+  
+  // Añadir efecto de trueno al hacer clic
+  truenos.push({
+    alpha: 100,
+    duracion: 8
+  });
+  ultimoTrueno = millis();
 }
 
 // Ajustar el tamaño del canvas cuando cambia el tamaño de la ventana
